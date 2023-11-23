@@ -282,6 +282,7 @@ where
     pub fn transmit(&mut self, bytes: &[u8]) {
         assert!(bytes.len() <= self.mtu() as usize);
 
+        trace!("enc28j60:transmit(): waiting for tx ready");
         self.wait_tx_ready();
 
         // NOTE the plus one is to not overwrite the per packet control byte
@@ -290,11 +291,13 @@ where
         // 1. ETXST was set during initialization
 
         // 2. write the frame to the IC memory
+        trace!("enc28j60:transmit(): writing buffer memory");
         self.write_buffer_memory(Some(wrpt), bytes);
 
         let txnd = wrpt + bytes.len() as u16 - 1;
 
         // 3. Set the end address of the transmit buffer
+        trace!("enc28j60:transmit(): writing transmit buffer pointers");
         self.write_control_register(bank0::Register::ETXNDL, txnd.low());
         self.write_control_register(bank0::Register::ETXNDH, txnd.high());
 
@@ -302,6 +305,7 @@ where
         //self.bit_field_clear(common::Register::EIR, common::EIR::mask().txif());
 
         // 5. start transmission
+        trace!("enc28j60:transmit(): starting transmission");
         self.bit_field_set(common::Register::ECON1, common::ECON1::mask().txrts());
 
         // Wait until transmission finishes
@@ -322,6 +326,8 @@ where
                 panic!("TransmitAbort")
             }
         }*/
+
+        trace!("enc28j60:transmit(): completed transfer");
     }
 
     /// Get whether the link is up
