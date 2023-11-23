@@ -664,10 +664,12 @@ where
 
     fn transmit(&mut self, _cx: &mut core::task::Context) -> Option<Self::TxToken<'_>> {
         let tx_buf = unsafe { &mut TX_BUF };
+        trace!("enc28j60:TxToken created");
         Some(TxToken { buf: tx_buf, eth: self })
     }
 
     fn link_state(&mut self, cx: &mut core::task::Context) -> LinkState {
+        trace!("enc28j60:link_state()");
         cx.waker().wake_by_ref();
         match self.is_link_up() {
             true => LinkState::Up,
@@ -720,6 +722,7 @@ where
     where
         F: FnOnce(&mut [u8]) -> R,
     {
+        trace!("enc28j60:TxToken::consume({})", len);
         assert!(len <= self.buf.len());
         let r = f(&mut self.buf[..len]);
         self.eth.transmit(&self.buf[..len]);
