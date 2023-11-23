@@ -250,7 +250,8 @@ where
     }
 
     fn wait_tx_ready(&mut self) {
-        for _ in 0u32..10000 {
+        for i in 0u32..10000 {
+            trace!("enc28j60: wait_tx_ready({})", i);
             if common::ECON1(self.read_control_register(common::Register::ECON1)).txrts() == 0 {
                 return;
             }
