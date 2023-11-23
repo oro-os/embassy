@@ -725,7 +725,9 @@ where
         trace!("enc28j60:TxToken::consume({})", len);
         assert!(len <= self.buf.len());
         let r = f(&mut self.buf[..len]);
+        trace!("enc28j60:TxToken::consume({}) ... f()", len);
         self.eth.transmit(&self.buf[..len]);
+        trace!("enc28j60:TxToken::consume({}) ... transmit()", len);
         r
     }
 }
