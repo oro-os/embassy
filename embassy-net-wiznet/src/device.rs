@@ -24,9 +24,30 @@ pub(crate) struct WiznetDevice<C, SPI> {
     _phantom: PhantomData<C>,
 }
 
+/// Error type when initializing a new Wiznet device
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum InitError<SE: core::fmt::Debug> {
+    /// Error occurred when sending or receiving SPI data
+    SpiError(SE),
+    /// The chip returned a version that isn't expected or supported
+    InvalidChipVersion {
+        /// The version that is supported
+        expected: u8,
+        /// The version that was returned by the chip
+        actual: u8,
+    },
+}
+
+impl<SE: core::fmt::Debug> From<SE> for InitError<SE> {
+    fn from(e: SE) -> Self {
+        InitError::SpiError(e)
+    }
+}
+
 impl<C: Chip, SPI: SpiDevice> WiznetDevice<C, SPI> {
     /// Create and initialize the driver
-    pub async fn new(spi: SPI, mac_addr: [u8; 6]) -> Result<Self, SPI::Error> {
+    pub async fn new(spi: SPI, mac_addr: [u8; 6]) -> Result<Self, InitError<SPI::Error>> {
         let mut this = Self {
             spi,
             _phantom: PhantomData,
@@ -34,6 +55,18 @@ impl<C: Chip, SPI: SpiDevice> WiznetDevice<C, SPI> {
 
         // Reset device
         this.bus_write(C::COMMON_MODE, &[0x80]).await?;
+
+        // Check the version of the chip
+        let mut version = [0];
+        this.bus_read(C::COMMON_VERSION, &mut version).await?;
+        if version[0] != C::CHIP_VERSION {
+            #[cfg(feature = "defmt")]
+            defmt::error!("invalid chip version: {} (expected {})", version[0], C::CHIP_VERSION);
+            return Err(InitError::InvalidChipVersion {
+                actual: version[0],
+                expected: C::CHIP_VERSION,
+            });
+        }
 
         // Enable interrupt pin
         this.bus_write(C::COMMON_SOCKET_INTR, &[0x01]).await?;
