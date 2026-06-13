@@ -568,34 +568,19 @@ impl<'d> Stack<'d> {
         })
     }
 
-    /// Make a query for a given name and return the corresponding IP addresses.
+    /// Make a query for a given name and return the corresponding DNS answers.
     #[cfg(feature = "dns")]
-    pub async fn dns_query(
-        &self,
-        name: &str,
-        qtype: dns::DnsQueryType,
-    ) -> Result<Vec<IpAddress, { smoltcp::config::DNS_MAX_RESULT_COUNT }>, dns::Error> {
-        // For A and AAAA queries we try detect whether `name` is just an IP address
-        match qtype {
-            #[cfg(feature = "proto-ipv4")]
-            dns::DnsQueryType::A => {
-                if let Ok(ip) = name.parse().map(IpAddress::Ipv4) {
-                    return Ok([ip].into_iter().collect());
-                }
-            }
-            #[cfg(feature = "proto-ipv6")]
-            dns::DnsQueryType::Aaaa => {
-                if let Ok(ip) = name.parse().map(IpAddress::Ipv6) {
-                    return Ok([ip].into_iter().collect());
-                }
-            }
-            _ => {}
-        }
+    pub async fn dns_query<N>(&self, name: N, qtype: dns::DnsQueryType) -> Result<dns::QueryResultIter<'d>, dns::Error>
+    where
+        N: TryInto<dns::Name>,
+        dns::Error: From<N::Error>,
+    {
+        let name = name.try_into()?;
 
         let query = poll_fn(|cx| {
             self.with_mut(|i| {
                 let socket = i.sockets.get_mut::<dns::Socket>(i.dns_socket);
-                match socket.start_query(i.iface.context(), name, qtype) {
+                match socket.start_query(i.iface.context(), name.as_smoltcp(), qtype) {
                     Ok(handle) => {
                         i.waker.wake();
                         Poll::Ready(Ok(handle))
@@ -604,7 +589,7 @@ impl<'d> Stack<'d> {
                         i.dns_waker.register(cx.waker());
                         Poll::Pending
                     }
-                    Err(e) => Poll::Ready(Err(e)),
+                    Err(e) => Poll::Ready(Err::<dns::QueryHandle, dns::Error>(e.into())),
                 }
             })
         })
@@ -645,18 +630,26 @@ impl<'d> Stack<'d> {
         let res = poll_fn(|cx| {
             self.with_mut(|i| {
                 let socket = i.sockets.get_mut::<dns::Socket>(i.dns_socket);
-                match socket.get_query_result(query) {
-                    Ok(addrs) => {
-                        i.dns_waker.wake();
-                        Poll::Ready(Ok(addrs))
+                let ready = match socket.get_query_result(query) {
+                    Ok(results) => {
+                        core::mem::forget(results);
+                        true
                     }
-                    Err(dns::GetQueryResultError::Pending) => {
-                        socket.register_query_waker(query, cx.waker());
-                        Poll::Pending
-                    }
+                    Err(dns::GetQueryResultError::Pending) => false,
                     Err(e) => {
                         i.dns_waker.wake();
-                        Poll::Ready(Err(e.into()))
+                        return Poll::Ready(Err(e.into()));
+                    }
+                };
+
+                match ready {
+                    true => {
+                        i.dns_waker.wake();
+                        Poll::Ready(Ok(()))
+                    }
+                    false => {
+                        socket.register_query_waker(query, cx.waker());
+                        Poll::Pending
                     }
                 }
             })
@@ -665,7 +658,7 @@ impl<'d> Stack<'d> {
 
         drop.defuse();
 
-        res
+        res.map(|()| dns::QueryResultIter::new(*self, query))
     }
 }
 

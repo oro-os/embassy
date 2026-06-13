@@ -10,7 +10,7 @@ memory management designed to work well for embedded systems, aiming for a more 
 
 - IPv4, IPv6
 - Ethernet and bare-IP mediums.
-- TCP, UDP, DNS, DHCPv4
+- TCP, UDP, (m)DNS, DHCPv4
 - TCP sockets implement the `embedded-io` async traits.
 - Multicast
 

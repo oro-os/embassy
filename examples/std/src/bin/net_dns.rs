@@ -1,6 +1,6 @@
 use clap::Parser;
 use embassy_executor::{Executor, Spawner};
-use embassy_net::dns::DnsQueryType;
+use embassy_net::dns::{DnsQueryType, QueryResult};
 use embassy_net::{Config, Ipv4Address, Ipv4Cidr, StackResources};
 use embassy_net_tuntap::TunTapDevice;
 use heapless::Vec;
@@ -58,8 +58,21 @@ async fn main_task(spawner: Spawner) {
     let host = "example.com";
     info!("querying host {:?}...", host);
     match stack.dns_query(host, DnsQueryType::A).await {
-        Ok(r) => {
-            info!("query response: {:?}", r);
+        Ok(results) => {
+            let mut found = false;
+            for result in results {
+                match result {
+                    QueryResult::Address(addr) => {
+                        found = true;
+                        info!("query response: {}", addr);
+                    }
+                    other => debug!("ignoring non-address answer: {:?}", other),
+                }
+            }
+
+            if !found {
+                warn!("query response: <no results>");
+            }
         }
         Err(e) => {
             warn!("query error: {:?}", e);
